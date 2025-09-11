@@ -6,6 +6,9 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:video_compress/video_compress.dart';  // ✅ Import
+
+import 'results_screen.dart';
 
 class UploadScreen extends StatefulWidget {
   const UploadScreen({super.key});
@@ -18,9 +21,9 @@ class _UploadScreenState extends State<UploadScreen> {
   File? _video;
   bool _uploading = false;
 
-  // 🔹 Cloudinary details
   final String cloudName = "dq057lhpr";
   final String uploadPreset = "Project";
+  final String backendUrl = "https://relive-backend-xvfs.onrender.com/";
 
   Future<void> _pickVideo() async {
     final picked = await ImagePicker().pickVideo(source: ImageSource.gallery);
@@ -28,6 +31,21 @@ class _UploadScreenState extends State<UploadScreen> {
       setState(() {
         _video = File(picked.path);
       });
+    }
+  }
+
+  // ✅ Compression function
+  Future<File?> _compressVideo(File file) async {
+    try {
+      final info = await VideoCompress.compressVideo(
+        file.path,
+        quality: VideoQuality.MediumQuality, // Low, Medium, High, VeryHigh
+        deleteOrigin: false,
+      );
+      return info?.file;
+    } catch (e) {
+      debugPrint("Compression error: $e");
+      return file; // fallback: return original
     }
   }
 
@@ -39,11 +57,16 @@ class _UploadScreenState extends State<UploadScreen> {
     });
 
     try {
+      // ✅ Compress before upload
+      final compressedVideo = await _compressVideo(_video!);
+      final fileToUpload = compressedVideo ?? _video!;
+
+      // 1️⃣ Upload to Cloudinary
       final url = Uri.parse("https://api.cloudinary.com/v1_1/$cloudName/video/upload");
 
       final request = http.MultipartRequest("POST", url)
         ..fields["upload_preset"] = uploadPreset
-        ..files.add(await http.MultipartFile.fromPath("file", _video!.path));
+        ..files.add(await http.MultipartFile.fromPath("file", fileToUpload.path));
 
       final streamedResponse = await request.send();
       final responseString = await streamedResponse.stream.bytesToString();
@@ -51,11 +74,12 @@ class _UploadScreenState extends State<UploadScreen> {
 
       if (data["secure_url"] != null) {
         final videoUrl = data["secure_url"];
+
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("✅ Uploaded to Cloudinary!")),
         );
 
-        // 🔹 Save video URL to Firestore
+        // 🔹 Save to Firestore
         final user = FirebaseAuth.instance.currentUser;
         if (user != null) {
           await FirebaseFirestore.instance
@@ -68,7 +92,35 @@ class _UploadScreenState extends State<UploadScreen> {
           });
         }
 
-        print("Cloudinary Video URL: $videoUrl");
+        // 2️⃣ Send video URL to FastAPI backend
+        final highlightResponse = await http.post(
+          Uri.parse("$backendUrl/process-video"),
+          headers: {"Content-Type": "application/json"},
+          body: jsonEncode({"video_url": videoUrl}),
+        );
+
+        List<dynamic> highlights = [];
+        if (highlightResponse.statusCode == 200) {
+          final jsonResponse = jsonDecode(highlightResponse.body);
+          highlights = jsonResponse["highlights"] ?? [];
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("❌ Highlight API failed: ${highlightResponse.statusCode}")),
+          );
+        }
+
+        // 3️⃣ Navigate to ResultsScreen
+        if (mounted) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => ResultsScreen(
+                videoUrl: videoUrl,
+                highlights: highlights,
+              ),
+            ),
+          );
+        }
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("❌ Upload failed")),
@@ -82,6 +134,7 @@ class _UploadScreenState extends State<UploadScreen> {
       setState(() {
         _uploading = false;
       });
+      VideoCompress.dispose(); // ✅ Free resources
     }
   }
 
@@ -162,7 +215,7 @@ class _UploadScreenState extends State<UploadScreen> {
                   icon: const Icon(Icons.cloud_upload),
                   label: _uploading
                       ? const Text("Uploading...")
-                      : const Text("Upload"),
+                      : const Text("Upload & Process"),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.green,
                     foregroundColor: Colors.white,
@@ -180,7 +233,7 @@ class _UploadScreenState extends State<UploadScreen> {
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    "Uploading...",
+                    "Compressing, Uploading & Processing...",
                     style: TextStyle(color: Colors.white, fontSize: 16),
                   ),
                 ]

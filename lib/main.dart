@@ -10,6 +10,7 @@ import 'screens/home_page.dart';
 import 'screens/upload_screen.dart';
 import 'screens/results_screen.dart';
 import 'screens/settings_page.dart';
+import 'backend/video_page.dart';
 
 // Providers
 import 'package:relive/providers/theme_provider.dart';
@@ -51,14 +52,16 @@ class MyApp extends StatelessWidget {
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Scaffold(
-                body: Center(child: CircularProgressIndicator()));
+              body: Center(child: CircularProgressIndicator()),
+            );
           }
           if (snapshot.hasData) {
             final user = snapshot.data!;
             final username = user.displayName ?? user.email!.split('@')[0];
-            // ✅ Try to show displayName, otherwise fallback to email prefix
+            // ✅ user is logged in → go to HomePage
             return HomePage();
           }
+          // ✅ user not logged in → go to Login
           return LoginPage(onTap: () {
             Navigator.pushReplacementNamed(context, '/signup');
           });
@@ -71,14 +74,16 @@ class MyApp extends StatelessWidget {
         '/signup': (context) => SignupPage(onTap: () {
           Navigator.pushReplacementNamed(context, '/login');
         }),
-        '/home': (context) {
-          return const HomePage();
-        },
-
-
+        '/home': (context) => const HomePage(),
         '/upload': (context) => UploadScreen(),
-        '/results': (context) => const ResultsScreen(videoUrl: "demo"),
+        '/results': (context) => const ResultsScreen(
+          videoUrl: "demo",
+          highlights: [],
+        ),
         '/settings': (context) => const SettingsPage(),
+
+        // ✅ New route for AI Highlights
+        '/video': (context) => const VideoPage(),
       },
     );
   }

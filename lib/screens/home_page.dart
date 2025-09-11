@@ -143,7 +143,7 @@ class _HomePageState extends State<HomePage> {
                   children: [
                     _buildRecentUploadsCard(),
                     _buildDemoCard(Icons.insights, "AI Results", Colors.blueAccent),
-                    _buildDemoCard(Icons.analytics, "Analytics Demo", Colors.orangeAccent),
+                    _buildDemoCard(Icons.analytics, "Auto-Captioning", Colors.orangeAccent),
                     _buildDemoCard(Icons.star, "Highlights", Colors.greenAccent),
                   ],
                 ),
@@ -197,7 +197,7 @@ class _HomePageState extends State<HomePage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: const [
-              Icon(Icons.upload_file, size: 50, color: Colors.purpleAccent),
+              Icon(Icons.upload_file, size: 50, color: Colors.black),
               SizedBox(height: 10),
               Text(
                 "Recent Uploads",
