@@ -3,7 +3,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 
 class ApiService {
-  final String baseUrl = "http://127.0.0.1:8000";
+  final String baseUrl = "http://127.0.0.1:8000"; // change for emulator/device
 
   // Upload video
   Future<String?> uploadVideo(File videoFile) async {
@@ -17,7 +17,7 @@ class ApiService {
     if (response.statusCode == 200) {
       var responseData = await response.stream.bytesToString();
       var jsonResponse = json.decode(responseData);
-      return jsonResponse["file_path"]; // returns uploaded path
+      return jsonResponse["file_path"];
     } else {
       return null;
     }
@@ -28,7 +28,7 @@ class ApiService {
     var response = await http.get(Uri.parse("$baseUrl/highlights/$filename"));
     if (response.statusCode == 200) {
       var jsonResponse = json.decode(response.body);
-      return jsonResponse["highlights"];
+      return jsonResponse["highlights"]; // contains url + transcript
     } else {
       return [];
     }

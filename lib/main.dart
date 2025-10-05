@@ -8,9 +8,9 @@ import 'screens/login_page.dart';
 import 'screens/signup_page.dart';
 import 'screens/home_page.dart';
 import 'screens/upload_screen.dart';
-import 'screens/results_screen.dart';
 import 'screens/settings_page.dart';
 import 'backend/video_page.dart';
+import 'screens/clipping_screen.dart';
 
 // Providers
 import 'package:relive/providers/theme_provider.dart';
@@ -76,14 +76,13 @@ class MyApp extends StatelessWidget {
         }),
         '/home': (context) => const HomePage(),
         '/upload': (context) => UploadScreen(),
-        '/results': (context) => const ResultsScreen(
-          videoUrl: "demo",
-          highlights: [],
-        ),
         '/settings': (context) => const SettingsPage(),
 
         // ✅ New route for AI Highlights
         '/video': (context) => const VideoPage(),
+        '/clipping': (context) => const ClippingScreen(),
+
+
       },
     );
   }

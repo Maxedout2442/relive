@@ -58,12 +58,14 @@ class Sidebar extends StatelessWidget {
                 _buildDrawerItem(Icons.home, "Home", () {
                   Navigator.pop(context);
                 }),
-                _buildDrawerItem(Icons.video_library, "My Uploads", () {
+                _buildDrawerItem(Icons.video_library, "Upload Video", () {
                   Navigator.pushNamed(context, '/upload');
                 }),
-                _buildDrawerItem(Icons.assessment, "Results", () {
-                  Navigator.pushNamed(context, '/results');
+
+                _buildDrawerItem(Icons.cut, "Clipping", () {
+                  Navigator.pushNamed(context, '/clipping');
                 }),
+
 
                 const Divider(color: Colors.white38),
 

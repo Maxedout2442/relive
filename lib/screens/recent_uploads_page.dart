@@ -1,51 +1,84 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:video_player/video_player.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 class RecentUploadsPage extends StatefulWidget {
-  final List<String> videoUrls;
-  const RecentUploadsPage({super.key, required this.videoUrls});
+  const RecentUploadsPage({super.key});
 
   @override
   State<RecentUploadsPage> createState() => _RecentUploadsPageState();
 }
 
 class _RecentUploadsPageState extends State<RecentUploadsPage> {
-  late List<String> videoUrls;
+  bool loading = true;
+  List<Map<String, dynamic>> uploads = [];
+
+  // Change this if backend is local
+  final String backendUrl = "https://relive-backend-xvfs.onrender.com";
 
   @override
   void initState() {
     super.initState();
-    videoUrls = widget.videoUrls;
+    fetchUploads();
   }
 
-  String getThumbnailUrl(String videoUrl) {
-    // Generates Cloudinary thumbnail
-    return videoUrl.replaceFirst(
-      '/video/upload/',
-      '/video/upload/c_thumb,g_auto,w_300/',
-    );
-  }
+  Future<void> fetchUploads() async {
+    setState(() => loading = true);
+    try {
+      final response = await http.get(Uri.parse("$backendUrl/list-uploads/"));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
 
-  Future<void> deleteVideo(String videoUrl) async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
+        // Sort uploads by created_at (most recent first)
+        final List uploadsData = data["uploads"] ?? [];
+        uploadsData.sort((a, b) {
+          final dateA = DateTime.tryParse(a["created_at"] ?? "") ?? DateTime(2000);
+          final dateB = DateTime.tryParse(b["created_at"] ?? "") ?? DateTime(2000);
+          return dateB.compareTo(dateA);
+        });
 
-    final snapshot = await FirebaseFirestore.instance
-        .collection('users')
-        .doc(user.uid)
-        .collection('uploads')
-        .where('url', isEqualTo: videoUrl)
-        .get();
-
-    for (var doc in snapshot.docs) {
-      await doc.reference.delete();
+        setState(() {
+          uploads = uploadsData.map<Map<String, dynamic>>((u) {
+            return {
+              "url": u["url"],
+              "public_id": u["public_id"],
+              "created_at": u["created_at"] ?? "",
+            };
+          }).toList();
+        });
+      } else {
+        throw Exception("Failed to fetch uploads: ${response.body}");
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("❌ Error fetching: $e")),
+      );
+    } finally {
+      setState(() => loading = false);
     }
+  }
 
-    setState(() {
-      videoUrls.remove(videoUrl);
-    });
+  Future<void> deleteVideo(String publicId) async {
+    try {
+      final response = await http.delete(
+        Uri.parse("$backendUrl/delete-upload/?public_id=$publicId"),
+      );
+      if (response.statusCode == 200) {
+        setState(() {
+          uploads.removeWhere((u) => u["public_id"] == publicId);
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("✅ Deleted successfully")),
+        );
+      } else {
+        throw Exception("Delete failed: ${response.body}");
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("❌ Error deleting video: $e")),
+      );
+    }
   }
 
   void openVideoPlayer(String videoUrl) {
@@ -54,6 +87,13 @@ class _RecentUploadsPageState extends State<RecentUploadsPage> {
       MaterialPageRoute(
         builder: (_) => VideoPlayerPage(videoUrl: videoUrl),
       ),
+    );
+  }
+
+  String getThumbnailUrl(String videoUrl) {
+    return videoUrl.replaceFirst(
+      '/video/upload/',
+      '/video/upload/c_thumb,g_auto,w_400/',
     );
   }
 
@@ -66,6 +106,12 @@ class _RecentUploadsPageState extends State<RecentUploadsPage> {
         elevation: 2,
         centerTitle: true,
         foregroundColor: Colors.deepPurple,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: fetchUploads,
+          ),
+        ],
       ),
       body: Container(
         width: double.infinity,
@@ -77,27 +123,35 @@ class _RecentUploadsPageState extends State<RecentUploadsPage> {
           ),
         ),
         padding: const EdgeInsets.all(16),
-        child: videoUrls.isEmpty
+        child: loading
+            ? const Center(
+          child: CircularProgressIndicator(color: Colors.white),
+        )
+            : uploads.isEmpty
             ? const Center(
           child: Text(
-            "No uploads yet",
+            "No recent uploads yet",
             style: TextStyle(color: Colors.white70, fontSize: 18),
           ),
         )
             : GridView.builder(
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          gridDelegate:
+          const SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 2,
             crossAxisSpacing: 16,
             mainAxisSpacing: 16,
             childAspectRatio: 16 / 9,
           ),
-          itemCount: videoUrls.length,
+          itemCount: uploads.length,
           itemBuilder: (context, index) {
-            final videoUrl = videoUrls[index];
-            final thumbnailUrl = getThumbnailUrl(videoUrl);
+            final upload = uploads[index];
+            final videoUrl = upload["url"];
+            final publicId = upload["public_id"];
+            final createdAt = upload["created_at"];
+            final thumbUrl = getThumbnailUrl(videoUrl);
 
             return Dismissible(
-              key: Key(videoUrl),
+              key: Key(publicId),
               direction: DismissDirection.endToStart,
               background: Container(
                 color: Colors.red,
@@ -105,7 +159,7 @@ class _RecentUploadsPageState extends State<RecentUploadsPage> {
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: const Icon(Icons.delete, color: Colors.white),
               ),
-              onDismissed: (_) => deleteVideo(videoUrl),
+              onDismissed: (_) => deleteVideo(publicId),
               child: GestureDetector(
                 onTap: () => openVideoPlayer(videoUrl),
                 child: Container(
@@ -113,7 +167,7 @@ class _RecentUploadsPageState extends State<RecentUploadsPage> {
                     borderRadius: BorderRadius.circular(16),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.2),
+                        color: Colors.black.withOpacity(0.25),
                         blurRadius: 6,
                         offset: const Offset(2, 4),
                       ),
@@ -125,20 +179,13 @@ class _RecentUploadsPageState extends State<RecentUploadsPage> {
                       fit: StackFit.expand,
                       children: [
                         Image.network(
-                          thumbnailUrl,
+                          thumbUrl,
                           fit: BoxFit.cover,
-                          loadingBuilder: (context, child, progress) {
-                            if (progress == null) return child;
-                            return const Center(
-                              child: CircularProgressIndicator(
-                                color: Colors.white,
-                              ),
-                            );
-                          },
                           errorBuilder: (_, __, ___) => Container(
                             color: Colors.black26,
                             child: const Center(
-                              child: Icon(Icons.error, color: Colors.white),
+                              child: Icon(Icons.error,
+                                  color: Colors.white),
                             ),
                           ),
                         ),
@@ -150,21 +197,21 @@ class _RecentUploadsPageState extends State<RecentUploadsPage> {
                             size: 50,
                           ),
                         ),
+                        // 🕒 Overlay upload time
                         Positioned(
                           bottom: 8,
-                          left: 8,
+                          right: 8,
                           child: Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 2),
+                                horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
                               color: Colors.black54,
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Text(
-                              "Video ${index + 1}",
+                              _formatDate(createdAt),
                               style: const TextStyle(
                                 color: Colors.white,
-                                fontWeight: FontWeight.bold,
                                 fontSize: 12,
                               ),
                             ),
@@ -181,9 +228,19 @@ class _RecentUploadsPageState extends State<RecentUploadsPage> {
       ),
     );
   }
+
+  // 🕒 Date formatting helper
+  String _formatDate(String createdAt) {
+    if (createdAt.isEmpty) return "";
+    try {
+      final date = DateTime.parse(createdAt).toLocal();
+      return "${date.day}/${date.month}/${date.year}";
+    } catch (_) {
+      return "";
+    }
+  }
 }
 
-// Video player page
 class VideoPlayerPage extends StatefulWidget {
   final String videoUrl;
   const VideoPlayerPage({super.key, required this.videoUrl});
@@ -222,40 +279,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       ),
       body: Center(
         child: _controller.value.isInitialized
-            ? Stack(
-          children: [
-            Center(
-              child: AspectRatio(
-                aspectRatio: _controller.value.aspectRatio,
-                child: VideoPlayer(_controller),
-              ),
-            ),
-            Positioned.fill(
-              child: Align(
-                alignment: Alignment.center,
-                child: IconButton(
-                  iconSize: 60,
-                  color: Colors.white70,
-                  icon: Icon(
-                    _controller.value.isPlaying
-                        ? Icons.pause_circle
-                        : Icons.play_circle,
-                  ),
-                  onPressed: () {
-                    setState(() {
-                      _controller.value.isPlaying
-                          ? _controller.pause()
-                          : _controller.play();
-                    });
-                  },
-                ),
-              ),
-            ),
-          ],
+            ? AspectRatio(
+          aspectRatio: _controller.value.aspectRatio,
+          child: VideoPlayer(_controller),
         )
-            : const CircularProgressIndicator(
-          color: Colors.white,
-        ),
+            : const CircularProgressIndicator(color: Colors.white),
       ),
     );
   }

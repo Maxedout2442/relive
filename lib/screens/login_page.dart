@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'home_page.dart'; // ✅ make sure HomePage is imported
 
 class LoginPage extends StatefulWidget {
   final VoidCallback onTap;
@@ -24,6 +25,7 @@ class _LoginPageState extends State<LoginPage> {
         password: _password.text.trim(),
       );
 
+      // fetch username from Firestore
       final doc = await FirebaseFirestore.instance
           .collection('users')
           .doc(cred.user!.uid)
@@ -31,8 +33,15 @@ class _LoginPageState extends State<LoginPage> {
 
       final username = doc.data()?['username'] ?? 'Relive User';
 
-      Navigator.pushReplacementNamed(context, '/home',
-          arguments: {'username': username});
+      // ✅ navigate to home directly (not named route)
+      if (!mounted) return;
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const HomePage(),
+          settings: RouteSettings(arguments: {'username': username}),
+        ),
+      );
     } on FirebaseAuthException catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.message ?? 'Login failed')),

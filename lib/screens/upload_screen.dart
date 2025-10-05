@@ -6,9 +6,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:video_compress/video_compress.dart';  // ✅ Import
-
-import 'results_screen.dart';
+import 'package:video_compress/video_compress.dart';
 
 class UploadScreen extends StatefulWidget {
   const UploadScreen({super.key});
@@ -20,10 +18,11 @@ class UploadScreen extends StatefulWidget {
 class _UploadScreenState extends State<UploadScreen> {
   File? _video;
   bool _uploading = false;
+  double _progress = 0.0;
+  String _statusMessage = "";
 
   final String cloudName = "dq057lhpr";
   final String uploadPreset = "Project";
-  final String backendUrl = "https://relive-backend-xvfs.onrender.com/";
 
   Future<void> _pickVideo() async {
     final picked = await ImagePicker().pickVideo(source: ImageSource.gallery);
@@ -34,18 +33,17 @@ class _UploadScreenState extends State<UploadScreen> {
     }
   }
 
-  // ✅ Compression function
   Future<File?> _compressVideo(File file) async {
     try {
       final info = await VideoCompress.compressVideo(
         file.path,
-        quality: VideoQuality.MediumQuality, // Low, Medium, High, VeryHigh
+        quality: VideoQuality.LowQuality, // smaller file size = more reliable
         deleteOrigin: false,
       );
       return info?.file;
     } catch (e) {
       debugPrint("Compression error: $e");
-      return file; // fallback: return original
+      return file;
     }
   }
 
@@ -54,32 +52,37 @@ class _UploadScreenState extends State<UploadScreen> {
 
     setState(() {
       _uploading = true;
+      _progress = 0.0;
+      _statusMessage = "Compressing video...";
     });
 
     try {
-      // ✅ Compress before upload
+      // 1️⃣ Compress video to smaller size
       final compressedVideo = await _compressVideo(_video!);
       final fileToUpload = compressedVideo ?? _video!;
+      debugPrint("File size after compression: ${fileToUpload.lengthSync() / (1024 * 1024)} MB");
 
-      // 1️⃣ Upload to Cloudinary
+      _statusMessage = "Uploading to Cloudinary...";
+      setState(() => _progress = 0.2);
+
+      // 2️⃣ Upload to Cloudinary using simple request (prevents broken pipe)
       final url = Uri.parse("https://api.cloudinary.com/v1_1/$cloudName/video/upload");
+      var request = http.MultipartRequest("POST", url);
+      request.fields['upload_preset'] = uploadPreset;
+      request.files.add(await http.MultipartFile.fromPath('file', fileToUpload.path));
 
-      final request = http.MultipartRequest("POST", url)
-        ..fields["upload_preset"] = uploadPreset
-        ..files.add(await http.MultipartFile.fromPath("file", fileToUpload.path));
-
-      final streamedResponse = await request.send();
-      final responseString = await streamedResponse.stream.bytesToString();
+      var response = await request.send();
+      var responseString = await response.stream.bytesToString();
       final data = jsonDecode(responseString);
 
       if (data["secure_url"] != null) {
         final videoUrl = data["secure_url"];
+        setState(() {
+          _progress = 1.0;
+          _statusMessage = "✅ Upload complete!";
+        });
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("✅ Uploaded to Cloudinary!")),
-        );
-
-        // 🔹 Save to Firestore
+        // 3️⃣ Save uploaded video to Firestore
         final user = FirebaseAuth.instance.currentUser;
         if (user != null) {
           await FirebaseFirestore.instance
@@ -92,49 +95,29 @@ class _UploadScreenState extends State<UploadScreen> {
           });
         }
 
-        // 2️⃣ Send video URL to FastAPI backend
-        final highlightResponse = await http.post(
-          Uri.parse("$backendUrl/process-video"),
-          headers: {"Content-Type": "application/json"},
-          body: jsonEncode({"video_url": videoUrl}),
+        // 4️⃣ Notify user & navigate
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("✅ Uploaded to Cloudinary successfully!")),
         );
 
-        List<dynamic> highlights = [];
-        if (highlightResponse.statusCode == 200) {
-          final jsonResponse = jsonDecode(highlightResponse.body);
-          highlights = jsonResponse["highlights"] ?? [];
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("❌ Highlight API failed: ${highlightResponse.statusCode}")),
-          );
-        }
-
-        // 3️⃣ Navigate to ResultsScreen
-        if (mounted) {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => ResultsScreen(
-                videoUrl: videoUrl,
-                highlights: highlights,
-              ),
-            ),
-          );
-        }
+        await Future.delayed(const Duration(seconds: 1));
+        if (mounted) Navigator.pushNamed(context, '/clipping');
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("❌ Upload failed")),
+          const SnackBar(content: Text("❌ Upload failed. Please try again.")),
         );
       }
     } catch (e) {
+      debugPrint("Upload error: $e");
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("❌ Error: $e")),
+        SnackBar(content: Text("❌ Upload error: $e")),
       );
     } finally {
       setState(() {
         _uploading = false;
+        _statusMessage = "";
       });
-      VideoCompress.dispose(); // ✅ Free resources
+      VideoCompress.dispose();
     }
   }
 
@@ -180,9 +163,12 @@ class _UploadScreenState extends State<UploadScreen> {
               children: [
                 SizedBox(height: 200, child: Lottie.asset("assets/upload.json")),
                 const SizedBox(height: 20),
+
                 _video == null
-                    ? const Text("No video selected",
-                    style: TextStyle(color: Colors.white70, fontSize: 16))
+                    ? const Text(
+                  "No video selected",
+                  style: TextStyle(color: Colors.white70, fontSize: 16),
+                )
                     : Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
@@ -195,7 +181,9 @@ class _UploadScreenState extends State<UploadScreen> {
                     textAlign: TextAlign.center,
                   ),
                 ),
+
                 const SizedBox(height: 30),
+
                 ElevatedButton.icon(
                   onPressed: _pickVideo,
                   icon: const Icon(Icons.upload_file),
@@ -210,12 +198,13 @@ class _UploadScreenState extends State<UploadScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
+
                 ElevatedButton.icon(
                   onPressed: _uploading ? null : _uploadVideo,
                   icon: const Icon(Icons.cloud_upload),
                   label: _uploading
                       ? const Text("Uploading...")
-                      : const Text("Upload & Process"),
+                      : const Text("Upload to Cloudinary"),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.green,
                     foregroundColor: Colors.white,
@@ -225,18 +214,20 @@ class _UploadScreenState extends State<UploadScreen> {
                     ),
                   ),
                 ),
+
                 if (_uploading) ...[
                   const SizedBox(height: 20),
-                  const LinearProgressIndicator(
+                  LinearProgressIndicator(
+                    value: _progress,
                     backgroundColor: Colors.white24,
                     color: Colors.white,
                   ),
                   const SizedBox(height: 8),
-                  const Text(
-                    "Compressing, Uploading & Processing...",
-                    style: TextStyle(color: Colors.white, fontSize: 16),
+                  Text(
+                    _statusMessage,
+                    style: const TextStyle(color: Colors.white, fontSize: 16),
                   ),
-                ]
+                ],
               ],
             ),
           ),

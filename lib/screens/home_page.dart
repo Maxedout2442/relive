@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../widgets/sidebar.dart';
-import 'package:relive/screens/recent_uploads_page.dart'; // make sure this file exists
+import 'package:relive/screens/recent_uploads_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -15,13 +15,21 @@ class _HomePageState extends State<HomePage> {
   User? user = FirebaseAuth.instance.currentUser;
   String? username;
   bool isLoading = true;
-  List<String> recentVideos = []; // store Cloudinary URLs
+  List<String> recentVideos = [];
 
   @override
-  void initState() {
-    super.initState();
-    fetchUsername();
-    fetchRecentUploads();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // ✅ get username from arguments if passed
+    final args =
+    ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>?;
+    if (args != null && args.containsKey('username')) {
+      username = args['username'];
+      isLoading = false;
+    } else {
+      // fallback: fetch from Firestore if not passed
+      fetchUsername();
+    }
   }
 
   Future<void> fetchUsername() async {
@@ -52,30 +60,23 @@ class _HomePageState extends State<HomePage> {
       setState(() {
         username = "User";
       });
+    } finally {
+      setState(() {
+        isLoading = false;
+      });
     }
   }
 
-  Future<void> fetchRecentUploads() async {
-    if (user == null) return;
-    try {
-      final snapshot = await FirebaseFirestore.instance
-          .collection("users")
-          .doc(user!.uid)
-          .collection("uploads")
-          .orderBy("uploadedAt", descending: true)
-          .limit(10)
-          .get();
 
-      setState(() {
-        recentVideos = snapshot.docs.map((doc) => doc["url"] as String).toList();
-        isLoading = false;
-      });
-    } catch (e) {
-      setState(() {
-        recentVideos = [];
-        isLoading = false;
-      });
-    }
+
+
+
+  /// 🔹 Helper: dynamic greeting (Morning / Afternoon / Evening)
+  String getGreeting() {
+    final hour = DateTime.now().hour;
+    if (hour < 12) return "Good Morning";
+    if (hour < 17) return "Good Afternoon";
+    return "Good Evening";
   }
 
   @override
@@ -119,6 +120,7 @@ class _HomePageState extends State<HomePage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // 🔹 Greeting with username
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
@@ -126,7 +128,7 @@ class _HomePageState extends State<HomePage> {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
-                  "Good Evening, ${username ?? "User"} 👋",
+                  "${getGreeting()}, ${username ?? "User"} 👋",
                   style: const TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.bold,
@@ -155,29 +157,14 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  /// 🔹 FIXED: Just navigate (don’t fetch again here)
   Widget _buildRecentUploadsCard() {
     return InkWell(
       borderRadius: BorderRadius.circular(16),
-      onTap: () async {
-        final user = FirebaseAuth.instance.currentUser;
-        if (user == null) return;
-
-        final snapshot = await FirebaseFirestore.instance
-            .collection("users")
-            .doc(user.uid)
-            .collection("uploads")
-            .orderBy("uploadedAt", descending: true)
-            .get();
-
-        final recentVideos =
-        snapshot.docs.map((doc) => doc["url"] as String).toList();
-
-        if (!mounted) return;
+      onTap: () {
         Navigator.push(
           context,
-          MaterialPageRoute(
-            builder: (context) => RecentUploadsPage(videoUrls: recentVideos),
-          ),
+          MaterialPageRoute(builder: (context) => const RecentUploadsPage()),
         );
       },
       child: Container(
@@ -204,7 +191,7 @@ class _HomePageState extends State<HomePage> {
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
-                  color: Colors.grey,
+                  color: Colors.black,
                 ),
               ),
             ],
@@ -213,8 +200,6 @@ class _HomePageState extends State<HomePage> {
       ),
     );
   }
-
-
 
   Widget _buildDemoCard(IconData icon, String title, Color color) {
     return Container(
