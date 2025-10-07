@@ -11,6 +11,9 @@ import 'screens/upload_screen.dart';
 import 'screens/settings_page.dart';
 import 'backend/video_page.dart';
 import 'screens/clipping_screen.dart';
+import 'screens/ai_results_page.dart';
+import 'screens/auto_caption_page.dart';
+import 'screens/highlights_page.dart';
 
 // Providers
 import 'package:relive/providers/theme_provider.dart';
@@ -67,6 +70,7 @@ class MyApp extends StatelessWidget {
           });
         },
       ),
+      initialRoute: '/login',
       routes: {
         '/login': (context) => LoginPage(onTap: () {
           Navigator.pushReplacementNamed(context, '/signup');
@@ -81,6 +85,11 @@ class MyApp extends StatelessWidget {
         // ✅ New route for AI Highlights
         '/video': (context) => const VideoPage(),
         '/clipping': (context) => const ClippingScreen(),
+
+
+        '/aiResults': (context) => const AIResultsPage(),
+        '/autoCaption': (context) => const AutoCaptionPage(),
+        '/highlights': (context) => const HighlightsPage(),
 
 
       },
